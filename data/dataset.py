@@ -1,47 +1,75 @@
 """Module containing datasets."""
+from functools import cached_property
 from pathlib import Path
+from typing import Tuple
 
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import Dataset
 
-from data.plot import plot_image_stack
+from data.definitions import IndexRange2D, IndexRange3D
+from data.plot import plot_image_stack, plot_image_with_rectangle
 from data.preprocessor import preprocess, read
+
+DEFAULT_RANGES = IndexRange3D(
+    z_min=27,
+    z_max=37,
+)
 
 
 class SubVolumeDataset(Dataset):
-    def __init__(self, fragment_path: Path, half_width: int, device: torch.device):
-        """Create a dataset that holds subvolumes of a fragment.
+    """A dataset that holds a subvolume of a fragment."""
+
+    def __init__(
+        self,
+        fragment_path: Path,
+        half_width: int,
+        indices_to_read: IndexRange3D = DEFAULT_RANGES,
+        exclude_indices: IndexRange2D = None,
+    ):
+        """Create a dataset that holds a subvolume of a fragment.
 
         Args:
             fragment_path: path to the fragment this dataset should yield data from
             half_width: return data from a [half_width*2 x half_width*2] window around each pixel
-            device: the device to place the loaded data on, e.g. 'cuda'
+            indices_to_read: min/max indices to read for the three (x,y,z) dimensional X-ray data
+            exclude_indices: min/max indices (relative to indices_to_read) of a 2D window to
+                exclude, e.g. for evaluation data
 
         """
         self.fragment_path = fragment_path
 
         # Preprocessing settings
-        self.z_min = 27
-        self.z_max = self.z_min + 10
         self.half_width = half_width
+        self.indices_to_read = indices_to_read
+        self.exclude_indices = exclude_indices
 
         # Read the actual data
-        self.mask, self.label, self.data = read(fragment_path, self.z_min, self.z_max)
-        self.mask, self.label, self.data = preprocess(
-            self.mask, self.label, self.data, device
+        self.mask, self.label, self.data = read(
+            fragment_path, self.indices_to_read.z_min, self.indices_to_read.z_max
         )
 
-        print(self.mask.shape)
-        self.indices = torch.nonzero(self.mask)
+        self.mask = self.mask[self.indices_to_read.xs, self.indices_to_read.ys]
+        self.label = self.label[self.indices_to_read.xs, self.indices_to_read.ys]
+        self.data = self.data[
+            :, self.indices_to_read.xs, self.indices_to_read.ys
+        ]  # Z sliced above
+
+        if self.exclude_indices is not None:
+            self.mask[self.exclude_indices.xs, self.exclude_indices.ys] = 0.0
+
+        self.mask, self.label, self.data = preprocess(
+            self.mask, self.label, self.data, half_width
+        )
+
+        self.indices = torch.nonzero(self.mask)  # Shape N x 2
         self.length = len(self.indices)
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Number of pixels this dataset contains."""
         return self.length
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get the subvolume of data at the given index."""
         x, y = self.indices[index]
         label = self.label[x, y]
         subvolume = self.data[
@@ -50,37 +78,51 @@ class SubVolumeDataset(Dataset):
             y - self.half_width : y + self.half_width + 1,
         ]
 
-        return subvolume, label
+        return subvolume.view(1, *subvolume.shape), label.view(1)
+
+    @cached_property
+    def num_positive_samples(self):
+        labels = self.label[self.indices[:, 0], self.indices[:, 1]]
+        return torch.sum(labels)
+
+    @cached_property
+    def num_negative_samples(self):
+        return self.length - self.num_positive_samples
 
 
 def main():
     """Create a dataset and print some information about it."""
     path = Path(__file__).parent / "train" / "1"
-    device = torch.device("cpu")
 
-    print(f"Creating a dataset from {path} on device {device}")
-    half_width = 5
-    dataset = SubVolumeDataset(path, half_width, device)
+    print(f"Creating a dataset from {path}")
+    half_width = 30
+    dataset = SubVolumeDataset(path, half_width, DEFAULT_RANGES)
     print(f"Length of dataset: {len(dataset)}")
 
-    index = 36373  # Manually selected index containing some nice data
+    # Selected index containing data with positive label
+    positive_indices = torch.nonzero(dataset.label)
+    positive_indices = dataset.indices == positive_indices[0]
+    positive_indices = torch.logical_and(positive_indices[:, 0], positive_indices[:, 1])
+    index = torch.nonzero(positive_indices).numpy().item()
+    print(f"Reading index: {index}")
+
     subvolume, label = dataset[index]
-    plot_image_stack(subvolume.numpy(), f"X-ray data with label = {label}")
+    print(f"Loaded data with shape: {subvolume.shape}")
+
+    plot_image_stack(subvolume.numpy()[0], f"X-ray data with label = {label}")
 
     label_to_plot = dataset.label.numpy()
-    offset = 2500
-    label_to_plot = label_to_plot[:1000, offset:5000]
-
-    fig, ax = plt.subplots()
-    ax.imshow(label_to_plot)
     row, col = tuple(dataset.indices[index].numpy())
-    col -= offset
-    print(col, row)
     size = half_width * 2 + 1
-    rectangle = patches.Rectangle((col, row), width=size, height=size, color="red")
-    ax.add_patch(rectangle)
-    plt.title("Label mask, data from dataset shown in red square")
-    plt.show()
+    plot_image_with_rectangle(
+        label_to_plot,
+        title="Label, visualized data shown in red square, eval data shown in blue square",
+        center=(col, row),
+        width=size,
+        height=size,
+        color="red",
+        fill=False,
+    )
 
 
 if __name__ == "__main__":

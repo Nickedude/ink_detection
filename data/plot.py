@@ -1,6 +1,9 @@
 """Module containing utility functions for plotting."""
+from typing import List, Tuple
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import patches
 
 
 def plot_image_stack(images: np.ndarray, title: str):
@@ -16,3 +19,25 @@ def plot_image_stack(images: np.ndarray, title: str):
 
     ax[0, 0].title.set_text(title)
     plt.show()
+
+
+def plot_image_with_rectangle(
+    image: np.ndarray, title: str, center: Tuple[int, int], **kwargs
+):
+    """Plot an image with a painted rectangle on top."""
+    fig, ax = plt.subplots()
+    ax.imshow(image)
+    rectangle = patches.Rectangle(center, **kwargs)
+    ax.add_patch(rectangle)
+    plt.title(title)
+    plt.show()
+
+
+def plot_loss(epochs: List[int], losses: List[float]):
+    """Plot the given loss values."""
+    plt.plot(epochs, losses, c="blue")
+    plt.title("Loss per epoch")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.savefig("loss.png")
+    plt.close()

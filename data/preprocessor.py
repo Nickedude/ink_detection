@@ -18,7 +18,16 @@ MAX_VALUE = 65535.0
 def read(
     fragment_path: Path, z_min: int, z_max: int
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Read the mask, label and 3D x-ray data of the given fragment."""
+    """Read the mask, label and 3D x-ray data of the given fragment.
+
+    Args:
+        fragment_path: path to directory with fragment to read
+        z_min: start reading x-ray .tif files starting at this depth
+        z_max: stop reading x-ray .tif files from this depth
+
+    Returns:
+        the mask, label and x-ray image stack
+    """
     mask = _read_image(fragment_path / "mask.png")
     label = _read_image(fragment_path / "inklabels.png")
 
@@ -42,19 +51,21 @@ def _read_image(path: Path) -> np.ndarray:
 
 
 def preprocess(
-    mask: np.ndarray, label: np.ndarray, images: np.ndarray, device: torch.device
+    mask: np.ndarray, label: np.ndarray, images: np.ndarray, half_width: int
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Preprocess the data from a single fragment."""
-    images = images / MAX_VALUE
+    images = images / MAX_VALUE  # Normalize pixel values to [0, 1] range
 
-    return tuple(map(lambda x: torch.from_numpy(x).to(device), [mask, label, images]))
+    # Don't read pixels too close to the border
+    not_border = np.zeros(mask.shape)
+    not_border[half_width:-half_width, half_width:-half_width] = 1.0
+    mask = mask * not_border
+
+    return tuple(map(lambda x: torch.from_numpy(x), [mask, label, images]))
 
 
 def main():
     """Load some example training data and show it."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using {device} as device ...")
-
     data_path = Path(__file__).parent / "train" / "1"
     z_min = 27
     num_slices = 10
@@ -72,7 +83,7 @@ def main():
 
     plot_image_stack(images, "x-ray data")
 
-    mask, label, images = preprocess(mask, label, images, device)
+    mask, label, images = preprocess(mask, label, images, half_width=5)
     print("Preprocessing outputs ...")
     print(f"Mask: {mask.shape}, {mask.dtype}, {mask.min()}, {mask.max()}")
     print(f"Label: {label.shape}, {label.dtype}, {label.min()}, {label.max()}")
