@@ -33,11 +33,13 @@ def plot_image_with_rectangle(
     plt.show()
 
 
-def plot_loss(epochs: List[int], losses: List[float]):
+def plot_loss(epochs: List[int], train_loss: List[float], eval_loss: List[float]):
     """Plot the given loss values."""
-    plt.plot(epochs, losses, c="blue")
+    plt.plot(epochs, train_loss, c="blue", label="Train")
+    plt.plot(epochs, eval_loss, c="red", label="Eval")
     plt.title("Loss per epoch")
     plt.xlabel("Epochs")
     plt.ylabel("Loss")
+    plt.legend()
     plt.savefig("loss.png")
     plt.close()

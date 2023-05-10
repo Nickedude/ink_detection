@@ -94,6 +94,11 @@ class SubVolumeDataset(Dataset):
     def num_negative_samples(self):
         return self.length - self.num_positive_samples
 
+    def subsample(self, factor: int):
+        """Subsample the dataset by the given factor."""
+        self.indices = self.indices[::factor]
+        self.length = len(self.indices)
+
 
 def main():
     """Create a dataset and print some information about it."""

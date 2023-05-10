@@ -14,6 +14,62 @@ from data.plot import plot_image_with_rectangle, plot_loss
 from model.resnet import ResNet
 
 
+def create_data_loaders(
+    path: Path,
+    half_width: int,
+    indices_to_read: IndexRange3D,
+    eval_indices: IndexRange2D,
+):
+    """Create dataloaders for training, evaluation and inference."""
+    batch_size = 32
+    train_dataset = SubVolumeDataset(
+        path, half_width, indices_to_read, exclude_indices=eval_indices
+    )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=os.cpu_count(),
+        prefetch_factor=4,
+    )
+
+    eval_dataset = SubVolumeDataset(
+        path,
+        half_width,
+        indices_to_read=IndexRange3D(
+            x_min=indices_to_read.x_min + eval_indices.x_min,
+            x_max=indices_to_read.x_min + eval_indices.x_max,
+            y_min=indices_to_read.y_min + eval_indices.y_min,
+            y_max=indices_to_read.y_max + eval_indices.y_max,
+            z_min=indices_to_read.z_min,
+            z_max=indices_to_read.z_max,
+        ),
+    )
+    eval_dataset.subsample(factor=4)
+    eval_loader = DataLoader(
+        eval_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=os.cpu_count(),
+        prefetch_factor=4,
+        drop_last=False,
+    )
+
+    infer_dataset = SubVolumeDataset(path, half_width, indices_to_read=indices_to_read)
+    infer_loader = DataLoader(
+        infer_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=os.cpu_count(),
+        pin_memory=True,
+        drop_last=False,
+    )
+
+    return train_loader, eval_loader, infer_loader
+
+
 def plot_eval_data(dataset: SubVolumeDataset):
     """Visualize the evaluation data."""
     width = dataset.exclude_indices.y_max - dataset.exclude_indices.y_min
@@ -32,63 +88,55 @@ def plot_eval_data(dataset: SubVolumeDataset):
 
 
 def train(
-    device: torch.device,
-    path: Path,
-    width: int,
-    indices_to_read: IndexRange3D,
-    eval_indices: IndexRange2D,
+    device: torch.device, train_loader: DataLoader, eval_loader: DataLoader
 ) -> torch.nn.Module:
     """Train a neural network on the given data."""
-    train_dataset = SubVolumeDataset(
-        path, width, indices_to_read, exclude_indices=eval_indices
-    )
-    plot_eval_data(train_dataset)
-
-    print(f"Num positive samples: {train_dataset.num_positive_samples}")
-    print(f"Num negative samples: {train_dataset.num_negative_samples}")
-    loader = DataLoader(
-        train_dataset,
-        batch_size=32,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=os.cpu_count(),
-        prefetch_factor=4,
-    )
     num_batches = 10_000
+    batches_per_epoch = 500
+    train_loader = iter(train_loader)
 
     model = ResNet().to(device)
     loss_function = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters())
     model.train()
 
-    running_loss = 0.0
-    batches_per_epoch = 100
-
-    losses = []
     epochs = []
+    eval_losses = []
+    train_losses = []
 
-    for i, (subvolume, label) in tqdm(
-        enumerate(loader), desc="Training", total=num_batches, unit="batch"
-    ):
-        if i >= num_batches:
-            break
+    for epoch in range(num_batches // batches_per_epoch):
+        running_loss = 0.0
 
-        optimizer.zero_grad()
-        outputs = model(subvolume.to(device))
-        loss = loss_function(outputs, label.to(device))
-        loss.backward()
-        running_loss += loss.item()
+        for _ in tqdm(
+            range(batches_per_epoch), desc=f"Training epoch {epoch}", unit="batch"
+        ):
+            optimizer.zero_grad()
 
-        if (i + 1) % batches_per_epoch == 0:
-            epochs.append((i + 1) // batches_per_epoch)
-            running_loss = running_loss / batches_per_epoch
-            losses.append(running_loss)
-            running_loss = 0.0
+            subvolume, label = next(train_loader)
+            outputs = model(subvolume.to(device))
 
-            plot_loss(epochs, losses)
-            torch.save(model.state_dict(), "model_weights.pth")
+            loss = loss_function(outputs, label.to(device))
+            loss.backward()
+            running_loss += loss.item()
 
-        optimizer.step()
+            optimizer.step()
+
+        epochs.append(epoch)
+        running_loss = running_loss / batches_per_epoch
+        train_losses.append(running_loss)
+        running_loss = 0.0
+
+        with torch.no_grad():
+            for subvolume, label in tqdm(
+                eval_loader, desc=f"Eval epoch {epoch}", unit="batch"
+            ):
+                outputs = model(subvolume.to(device))
+                loss = loss_function(outputs, label.to(device))
+                running_loss += loss.item()
+
+        eval_losses.append(running_loss / len(eval_loader))
+        plot_loss(epochs, train_losses, eval_losses)
+        torch.save(model.state_dict(), "model_weights.pth")
 
     return model
 
@@ -165,7 +213,20 @@ def main():
         y_min=2750,
         y_max=3000,
     )
-    model = train(device, path, half_width, indices_to_read, eval_indices)
+    train_loader, eval_loader, infer_loader = create_data_loaders(
+        path, half_width, indices_to_read, eval_indices
+    )
+    plot_eval_data(train_loader.dataset)
+
+    print("Training dataset balance:")
+    print(f"\tPositive samples: {train_loader.dataset.num_positive_samples}")
+    print(f"\tNegative samples: {train_loader.dataset.num_negative_samples}\n")
+
+    print("Eval dataset balance:")
+    print(f"\tPositive samples: {eval_loader.dataset.num_positive_samples}")
+    print(f"\tNegative samples: {eval_loader.dataset.num_negative_samples}")
+
+    model = train(device, train_loader, eval_loader)
     # model = build().to(device)
     # model.load_state_dict(torch.load("model_weights.pth"))
     infer(device, path, half_width, indices_to_read, eval_indices, model)
