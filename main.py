@@ -11,7 +11,7 @@ from tqdm import tqdm
 from data.dataset import SubVolumeDataset
 from data.definitions import IndexRange2D, IndexRange3D
 from data.plot import plot_image_with_rectangle, plot_loss
-from model.simple import build
+from model.resnet import ResNet
 
 
 def plot_eval_data(dataset: SubVolumeDataset):
@@ -34,13 +34,13 @@ def plot_eval_data(dataset: SubVolumeDataset):
 def train(
     device: torch.device,
     path: Path,
-    half_width: int,
+    width: int,
     indices_to_read: IndexRange3D,
     eval_indices: IndexRange2D,
-) -> torch.nn.Sequential:
+) -> torch.nn.Module:
     """Train a neural network on the given data."""
     train_dataset = SubVolumeDataset(
-        path, half_width, indices_to_read, exclude_indices=eval_indices
+        path, width, indices_to_read, exclude_indices=eval_indices
     )
     plot_eval_data(train_dataset)
 
@@ -56,7 +56,7 @@ def train(
     )
     num_batches = 10_000
 
-    model = build().to(device)
+    model = ResNet().to(device)
     loss_function = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters())
     model.train()
@@ -150,7 +150,7 @@ def main():
     print(f"Using {device} as device ...")
 
     path = Path(__file__).parent / "data" / "train" / "1"
-    half_width = 30
+    half_width = 31  # Yields 63x63 patches
     indices_to_read = IndexRange3D(
         x_min=0,
         x_max=1000,

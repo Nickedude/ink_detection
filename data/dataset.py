@@ -25,6 +25,7 @@ class SubVolumeDataset(Dataset):
         half_width: int,
         indices_to_read: IndexRange3D = DEFAULT_RANGES,
         exclude_indices: IndexRange2D = None,
+        add_dimension: bool = False,
     ):
         """Create a dataset that holds a subvolume of a fragment.
 
@@ -34,9 +35,12 @@ class SubVolumeDataset(Dataset):
             indices_to_read: min/max indices to read for the three (x,y,z) dimensional X-ray data
             exclude_indices: min/max indices (relative to indices_to_read) of a 2D window to
                 exclude, e.g. for evaluation data
+            add_dimension: if set to True, will add an extra dimension to the data, useful when
+                using 3D convolutions
 
         """
         self.fragment_path = fragment_path
+        self.add_dimension = add_dimension
 
         # Preprocessing settings
         self.half_width = half_width
@@ -78,7 +82,8 @@ class SubVolumeDataset(Dataset):
             y - self.half_width : y + self.half_width + 1,
         ]
 
-        return subvolume.view(1, *subvolume.shape), label.view(1)
+        shape = (1, *subvolume.shape) if self.add_dimension else subvolume.shape
+        return subvolume.view(shape), label.view(1)
 
     @cached_property
     def num_positive_samples(self):

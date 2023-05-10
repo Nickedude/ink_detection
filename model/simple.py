@@ -15,5 +15,5 @@ def build() -> nn.Sequential:
         nn.LazyLinear(out_features=128),
         nn.ReLU(),
         nn.LazyLinear(out_features=1),
-        nn.Sigmoid()
+        nn.Sigmoid(),
     )
