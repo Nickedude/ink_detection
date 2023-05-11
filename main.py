@@ -46,7 +46,7 @@ def create_data_loaders(
             z_max=indices_to_read.z_max,
         ),
     )
-    eval_dataset.subsample(factor=4)
+    eval_dataset.subsample(factor=32)
     eval_loader = DataLoader(
         eval_dataset,
         batch_size=batch_size,
@@ -95,7 +95,7 @@ def train(
     device: torch.device, train_loader: DataLoader, eval_loader: DataLoader
 ) -> torch.nn.Module:
     """Train a neural network on the given data."""
-    num_batches = 10_000
+    num_batches = 30_000
     batches_per_epoch = 500
     train_loader = iter(train_loader)
 
@@ -206,18 +206,14 @@ def main():
     path = Path(__file__).parent / "data" / "train" / "1"
     half_width = 31  # Yields 63x63 patches
     indices_to_read = IndexRange3D(
-        x_min=0,
-        x_max=1000,
-        y_min=2000,
-        y_max=5000,
         z_min=27,
         z_max=37,
     )
     eval_indices = IndexRange2D(  # Relative to the read indices
-        x_min=0,
-        x_max=300,
-        y_min=2750,
-        y_max=3000,
+        x_min=4650,
+        x_max=5450,
+        y_min=1300,
+        y_max=2700,
     )
     train_loader, eval_loader, infer_loader = create_data_loaders(
         path, half_width, indices_to_read, eval_indices
