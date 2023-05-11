@@ -41,7 +41,7 @@ def create_data_loaders(
             x_min=indices_to_read.x_min + eval_indices.x_min,
             x_max=indices_to_read.x_min + eval_indices.x_max,
             y_min=indices_to_read.y_min + eval_indices.y_min,
-            y_max=indices_to_read.y_max + eval_indices.y_max,
+            y_max=indices_to_read.y_min + eval_indices.y_max,
             z_min=indices_to_read.z_min,
             z_max=indices_to_read.z_max,
         ),
@@ -70,21 +70,25 @@ def create_data_loaders(
     return train_loader, eval_loader, infer_loader
 
 
-def plot_eval_data(dataset: SubVolumeDataset):
+def plot_eval_data(train_dataset: SubVolumeDataset, eval_dataset: SubVolumeDataset):
     """Visualize the evaluation data."""
-    width = dataset.exclude_indices.y_max - dataset.exclude_indices.y_min
-    height = dataset.exclude_indices.x_max - dataset.exclude_indices.x_min
+    width = train_dataset.exclude_indices.y_max - train_dataset.exclude_indices.y_min
+    height = train_dataset.exclude_indices.x_max - train_dataset.exclude_indices.x_min
 
     # Matplotlib uses opposite definition of x/y
     plot_image_with_rectangle(
-        image=dataset.label.numpy(),
-        title="Label mask, eval data visualized in red square",
-        center=(dataset.exclude_indices.y_min, dataset.exclude_indices.x_min),
+        image=train_dataset.label.numpy(),
+        title="Label mask for training, eval data visualized in red square",
+        center=(train_dataset.exclude_indices.y_min, train_dataset.exclude_indices.x_min),
         width=width,
         height=height,
         color="red",
         fill=False,
     )
+
+    plt.imshow(eval_dataset.label.numpy())
+    plt.title("Label mask for eval")
+    plt.show()
 
 
 def train(
@@ -98,13 +102,13 @@ def train(
     model = ResNet().to(device)
     loss_function = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters())
-    model.train()
 
     epochs = []
     eval_losses = []
     train_losses = []
 
     for epoch in range(num_batches // batches_per_epoch):
+        model.train()
         running_loss = 0.0
 
         for _ in tqdm(
@@ -124,6 +128,8 @@ def train(
         epochs.append(epoch)
         running_loss = running_loss / batches_per_epoch
         train_losses.append(running_loss)
+
+        model.eval()
         running_loss = 0.0
 
         with torch.no_grad():
@@ -216,7 +222,7 @@ def main():
     train_loader, eval_loader, infer_loader = create_data_loaders(
         path, half_width, indices_to_read, eval_indices
     )
-    plot_eval_data(train_loader.dataset)
+    plot_eval_data(train_loader.dataset, eval_loader.dataset)
 
     print("Training dataset balance:")
     print(f"\tPositive samples: {train_loader.dataset.num_positive_samples}")
