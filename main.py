@@ -46,7 +46,7 @@ def create_data_loaders(
             z_max=indices_to_read.z_max,
         ),
     )
-    eval_dataset.subsample(factor=32)
+    eval_dataset.subsample(factor=8)
     eval_loader = DataLoader(
         eval_dataset,
         batch_size=batch_size,
@@ -96,7 +96,7 @@ def train(
 ) -> torch.nn.Module:
     """Train a neural network on the given data."""
     num_batches = 30_000
-    batches_per_epoch = 500
+    batches_per_epoch = 1000
     train_loader = iter(train_loader)
 
     model = ResNet().to(device)
@@ -142,7 +142,7 @@ def train(
 
         eval_losses.append(running_loss / len(eval_loader))
         plot_loss(epochs, train_losses, eval_losses)
-        torch.save(model.state_dict(), "model_weights.pth")
+        torch.save(model.state_dict(), f"model_weights_{epoch}.pth")
 
     return model
 
