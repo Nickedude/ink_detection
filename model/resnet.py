@@ -83,7 +83,7 @@ class ResNet(nn.Module):
             x: Input tensor of shape [N, C=10, H=63, W=63]
 
         """
-        # [(W−K+2P)/S]+1
+        # Size after convolution operation: [(W−K+2P)/S]+1
         x = self.conv1(x)  # [N, 10, 63, 63] -> [N, 64, 63, 63]
         x = self.max_pool(x)  # [N, 64, 63, 63] -> [N, 64, 32, 32]
         x = self.layer_group_0(x)  # [N, 64, 32, 32] -> [N, 64, 32, 32]

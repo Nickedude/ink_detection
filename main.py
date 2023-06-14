@@ -142,7 +142,7 @@ def train(
 
         eval_losses.append(running_loss / len(eval_loader))
         plot_loss(epochs, train_losses, eval_losses)
-        torch.save(model.state_dict(), f"model_weights_{epoch}.pth")
+        # torch.save(model.state_dict(), f"model_weights_{epoch}.pth")
 
     return model
 
